@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -119,18 +119,23 @@ export default function HomeScreen() {
   const [profileCarbs, setProfileCarbs] = useState('');
   const [profileFats, setProfileFats] = useState('');
 
+  // Status tracking for live edits
+  const [activeEditingField, setActiveEditingField] = useState<string | null>(null);
+  const [showSaveSuccess, setShowSaveSuccess] = useState<string | null>(null);
+  const liveSaveTimeout = useRef<any>(null);
+
   useEffect(() => {
     if (!loading && state.userProfile) {
-      setProfileName(state.userProfile.name);
-      setProfileGoalCalories(String(state.userProfile.goalCalories));
-      setProfileWeight(String(state.userProfile.weight));
-      setProfileTargetWeight(String(state.userProfile.targetWeight));
+      if (activeEditingField !== 'name') setProfileName(state.userProfile.name);
+      if (activeEditingField !== 'goalCalories') setProfileGoalCalories(String(state.userProfile.goalCalories));
+      if (activeEditingField !== 'weight') setProfileWeight(String(state.userProfile.weight));
+      if (activeEditingField !== 'targetWeight') setProfileTargetWeight(String(state.userProfile.targetWeight));
       setProfileDietType(state.userProfile.dietType);
-      setProfileProtein(String(state.userProfile.goalProtein));
-      setProfileCarbs(String(state.userProfile.goalCarbs));
-      setProfileFats(String(state.userProfile.goalFats));
+      if (activeEditingField !== 'protein') setProfileProtein(String(state.userProfile.goalProtein));
+      if (activeEditingField !== 'carbs') setProfileCarbs(String(state.userProfile.goalCarbs));
+      if (activeEditingField !== 'fats') setProfileFats(String(state.userProfile.goalFats));
     }
-  }, [loading, state.userProfile]);
+  }, [loading, state.userProfile, activeEditingField]);
 
   if (loading) {
     return (
@@ -196,6 +201,63 @@ export default function HomeScreen() {
       goalCarbs: parsedCarbs,
       goalFats: parsedFats
     });
+
+    // Flash success all fields
+    setShowSaveSuccess('all');
+    setTimeout(() => setShowSaveSuccess(null), 1500);
+  };
+
+  // Perform debounced live auto-saving to prevent lag and dropped characters on the native UI thread
+  const performLiveUpdate = (field: string, value: any) => {
+    setActiveEditingField(field);
+    setShowSaveSuccess(null);
+
+    if (liveSaveTimeout.current) {
+      clearTimeout(liveSaveTimeout.current);
+    }
+
+    liveSaveTimeout.current = setTimeout(() => {
+      const updatePayload: any = {};
+      if (field === 'name') updatePayload.name = value;
+      else if (field === 'goalCalories') updatePayload.goalCalories = parseInt(value) || 2000;
+      else if (field === 'weight') updatePayload.weight = parseFloat(value) || 74;
+      else if (field === 'targetWeight') updatePayload.targetWeight = parseFloat(value) || 72;
+      else if (field === 'protein') updatePayload.goalProtein = parseInt(value) || 130;
+      else if (field === 'carbs') updatePayload.goalCarbs = parseInt(value) || 220;
+      else if (field === 'fats') updatePayload.goalFats = parseInt(value) || 65;
+
+      updateProfile(updatePayload);
+
+      // Flash local saved success badge next to label
+      setShowSaveSuccess(field);
+      setTimeout(() => {
+        setShowSaveSuccess((current) => current === field ? null : current);
+      }, 1500);
+    }, 500);
+  };
+
+  // Immediate save on blur to guarantee last character typed is persisted instantly
+  const flushPendingSave = (field: string, value: any) => {
+    if (liveSaveTimeout.current) {
+      clearTimeout(liveSaveTimeout.current);
+    }
+    setActiveEditingField(null);
+
+    const updatePayload: any = {};
+    if (field === 'name') updatePayload.name = value;
+    else if (field === 'goalCalories') updatePayload.goalCalories = parseInt(value) || 2000;
+    else if (field === 'weight') updatePayload.weight = parseFloat(value) || 74;
+    else if (field === 'targetWeight') updatePayload.targetWeight = parseFloat(value) || 72;
+    else if (field === 'protein') updatePayload.goalProtein = parseInt(value) || 130;
+    else if (field === 'carbs') updatePayload.goalCarbs = parseInt(value) || 220;
+    else if (field === 'fats') updatePayload.goalFats = parseInt(value) || 65;
+
+    updateProfile(updatePayload);
+
+    setShowSaveSuccess(field);
+    setTimeout(() => {
+      setShowSaveSuccess((current) => current === field ? null : current);
+    }, 1500);
   };
 
   // Diet category auto calculator helper
@@ -227,6 +289,19 @@ export default function HomeScreen() {
     setProfileProtein(String(calculatedProt));
     setProfileCarbs(String(calculatedCarbs));
     setProfileFats(String(calculatedFats));
+
+    // Update global state instantly
+    updateProfile({
+      dietType: diet,
+      goalProtein: calculatedProt,
+      goalCarbs: calculatedCarbs,
+      goalFats: calculatedFats
+    });
+
+    setShowSaveSuccess('dietType');
+    setTimeout(() => {
+      setShowSaveSuccess((current) => current === 'dietType' ? null : current);
+    }, 1500);
   };
 
   // Trends Bezier curve generator
@@ -817,11 +892,28 @@ export default function HomeScreen() {
             <View style={[styles.formContainer, { backgroundColor: colors.backgroundElement }]}>
               {/* Name */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>My Name</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>My Name</Text>
+                  {activeEditingField === 'name' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'name' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'name' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileName}
-                  onChangeText={setProfileName}
+                  onChangeText={(val) => {
+                    setProfileName(val);
+                    performLiveUpdate('name', val);
+                  }}
+                  onFocus={() => setActiveEditingField('name')}
+                  onBlur={() => flushPendingSave('name', profileName)}
                   placeholder="Enter name"
                   placeholderTextColor={colors.textSecondary}
                 />
@@ -829,11 +921,28 @@ export default function HomeScreen() {
 
               {/* Calorie Budget */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Calorie Goal (kcal)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Calorie Goal (kcal)</Text>
+                  {activeEditingField === 'goalCalories' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'goalCalories' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'goalCalories' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileGoalCalories}
-                  onChangeText={setProfileGoalCalories}
+                  onChangeText={(val) => {
+                    setProfileGoalCalories(val);
+                    performLiveUpdate('goalCalories', val);
+                  }}
+                  onFocus={() => setActiveEditingField('goalCalories')}
+                  onBlur={() => flushPendingSave('goalCalories', profileGoalCalories)}
                   keyboardType="numeric"
                   placeholder="2000"
                 />
@@ -841,11 +950,28 @@ export default function HomeScreen() {
 
               {/* Weight */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Current Weight (kg)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Current Weight (kg)</Text>
+                  {activeEditingField === 'weight' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'weight' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'weight' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileWeight}
-                  onChangeText={setProfileWeight}
+                  onChangeText={(val) => {
+                    setProfileWeight(val);
+                    performLiveUpdate('weight', val);
+                  }}
+                  onFocus={() => setActiveEditingField('weight')}
+                  onBlur={() => flushPendingSave('weight', profileWeight)}
                   keyboardType="numeric"
                   placeholder="74"
                 />
@@ -853,11 +979,28 @@ export default function HomeScreen() {
 
               {/* Target Weight */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Target Weight (kg)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Target Weight (kg)</Text>
+                  {activeEditingField === 'targetWeight' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'targetWeight' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'targetWeight' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileTargetWeight}
-                  onChangeText={setProfileTargetWeight}
+                  onChangeText={(val) => {
+                    setProfileTargetWeight(val);
+                    performLiveUpdate('targetWeight', val);
+                  }}
+                  onFocus={() => setActiveEditingField('targetWeight')}
+                  onBlur={() => flushPendingSave('targetWeight', profileTargetWeight)}
                   keyboardType="numeric"
                   placeholder="72"
                 />
@@ -865,7 +1008,12 @@ export default function HomeScreen() {
 
               {/* Diet Type Selector */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Diet Standard</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Diet Standard</Text>
+                  {(showSaveSuccess === 'dietType' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved & Recalculated Macros</Text>
+                  )}
+                </View>
                 <View style={styles.dietPillsContainer}>
                   {([
                     { label: 'Balanced', value: 'balanced' },
@@ -898,33 +1046,84 @@ export default function HomeScreen() {
 
               {/* Manual Protein */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Protein Goal (g)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Protein Goal (g)</Text>
+                  {activeEditingField === 'protein' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'protein' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'protein' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileProtein}
-                  onChangeText={setProfileProtein}
+                  onChangeText={(val) => {
+                    setProfileProtein(val);
+                    performLiveUpdate('protein', val);
+                  }}
+                  onFocus={() => setActiveEditingField('protein')}
+                  onBlur={() => flushPendingSave('protein', profileProtein)}
                   keyboardType="numeric"
                 />
               </View>
 
               {/* Manual Carbs */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Carbs Goal (g)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Carbs Goal (g)</Text>
+                  {activeEditingField === 'carbs' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'carbs' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'carbs' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileCarbs}
-                  onChangeText={setProfileCarbs}
+                  onChangeText={(val) => {
+                    setProfileCarbs(val);
+                    performLiveUpdate('carbs', val);
+                  }}
+                  onFocus={() => setActiveEditingField('carbs')}
+                  onBlur={() => flushPendingSave('carbs', profileCarbs)}
                   keyboardType="numeric"
                 />
               </View>
 
               {/* Manual Fats */}
               <View style={styles.formRow}>
-                <Text style={[styles.formLabel, { color: colors.text }]}>Fats Goal (g)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: colors.text }]}>Fats Goal (g)</Text>
+                  {activeEditingField === 'fats' && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0a84ff' }}>Updating...</Text>
+                  )}
+                  {(showSaveSuccess === 'fats' || showSaveSuccess === 'all') && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#30d158' }}>✓ Saved</Text>
+                  )}
+                </View>
                 <TextInput
-                  style={[styles.formInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                  style={[
+                    styles.formInput,
+                    { color: colors.text, borderColor: colors.backgroundSelected },
+                    activeEditingField === 'fats' && { borderColor: '#0a84ff', borderWidth: 1.5 }
+                  ]}
                   value={profileFats}
-                  onChangeText={setProfileFats}
+                  onChangeText={(val) => {
+                    setProfileFats(val);
+                    performLiveUpdate('fats', val);
+                  }}
+                  onFocus={() => setActiveEditingField('fats')}
+                  onBlur={() => flushPendingSave('fats', profileFats)}
                   keyboardType="numeric"
                 />
               </View>

@@ -8,6 +8,7 @@ import {
 } from 'expo-router/ui';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ExternalLink } from './external-link';
 import { ThemedText } from './themed-text';
@@ -22,10 +23,10 @@ export default function AppTabs() {
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton>Hub</TabButton>
+            <TabButton icon="home-outline">Hub</TabButton>
           </TabTrigger>
           <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Scanner</TabButton>
+            <TabButton icon="scan-outline">Scanner</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -33,15 +34,36 @@ export default function AppTabs() {
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+export interface TabButtonProps extends TabTriggerSlotProps {
+  icon?: string;
+}
+
+export function TabButton({ children, isFocused, icon, ...props }: TabButtonProps) {
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+
+  // Modernized icon mapping
+  const activeIcon = icon === 'home-outline' 
+    ? (isFocused ? 'home' : 'home-outline') 
+    : (isFocused ? 'scan' : 'scan-outline');
+
   return (
     <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
-          {children}
-        </ThemedText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.one + 2 }}>
+          {icon && (
+            <Ionicons
+              name={activeIcon as any}
+              size={16}
+              color={isFocused ? '#bf5af2' : colors.textSecondary}
+            />
+          )}
+          <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+            {children}
+          </ThemedText>
+        </View>
       </ThemedView>
     </Pressable>
   );

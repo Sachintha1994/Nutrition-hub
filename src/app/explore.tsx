@@ -9,7 +9,8 @@ import {
   Dimensions,
   Easing,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -146,6 +147,38 @@ export default function ScanScreen() {
   const [showSheet, setShowSheet] = useState(false);
   const [portionSize, setPortionSize] = useState(1.0);
   const [selectedMealType, setSelectedMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('breakfast');
+
+  // Multi-ingredient portion & custom lists
+  const [ingredientPortions, setIngredientPortions] = useState<number[]>([]);
+  const [activeComponents, setActiveComponents] = useState<typeof FOOD_PRESETS[0]['components']>([]);
+
+  // Correction & Custom meal builder states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [isCustomMeal, setIsCustomMeal] = useState(false);
+  const [customMealName, setCustomMealName] = useState('Custom Meal');
+
+  // Custom ingredient inputs
+  const [showAddCustomIngredient, setShowAddCustomIngredient] = useState(false);
+  const [newIngredientLabel, setNewIngredientLabel] = useState('');
+  const [newIngredientCals, setNewIngredientCals] = useState('');
+  const [newIngredientProt, setNewIngredientProt] = useState('');
+  const [newIngredientCarbs, setNewIngredientCarbs] = useState('');
+  const [newIngredientFats, setNewIngredientFats] = useState('');
+
+  // Sync state when food is identified
+  useEffect(() => {
+    if (selectedFood) {
+      setActiveComponents([...selectedFood.components]);
+      setIngredientPortions(selectedFood.components.map(() => 1.0));
+      setCustomMealName(selectedFood.name);
+      setIsCustomMeal(selectedFood.id.startsWith('custom_'));
+    } else {
+      setActiveComponents([]);
+      setIngredientPortions([]);
+      setIsCustomMeal(false);
+    }
+  }, [selectedFood]);
 
   // Animation values
   const laserAnim = useRef(new Animated.Value(0)).current;
@@ -321,22 +354,102 @@ export default function ScanScreen() {
     }, 600);
   };
 
+  const handlePortionChange = (idx: number, delta: number) => {
+    const updated = [...ingredientPortions];
+    updated[idx] = Math.max(0.1, Number(((updated[idx] ?? 1.0) + delta).toFixed(1)));
+    setIngredientPortions(updated);
+  };
+
+  const handleDeleteIngredient = (idx: number) => {
+    const updatedComps = activeComponents.filter((_, i) => i !== idx);
+    const updatedPortions = ingredientPortions.filter((_, i) => i !== idx);
+    setActiveComponents(updatedComps);
+    setIngredientPortions(updatedPortions);
+  };
+
+  const handleAddIngredient = () => {
+    if (!newIngredientLabel.trim() || !newIngredientCals.trim()) {
+      alert('Please enter a name and calorie count for the ingredient!');
+      return;
+    }
+    const cals = Math.max(0, parseInt(newIngredientCals) || 0);
+    const prot = Math.max(0, parseInt(newIngredientProt) || 0);
+    const carbs = Math.max(0, parseInt(newIngredientCarbs) || 0);
+    const fats = Math.max(0, parseInt(newIngredientFats) || 0);
+
+    const newComp = {
+      label: newIngredientLabel.trim(),
+      x: 20 + Math.random() * 60,
+      y: 20 + Math.random() * 60,
+      w: 30,
+      h: 30,
+      calories: cals,
+      protein: prot,
+      carbs: carbs,
+      fats: fats
+    };
+
+    setActiveComponents([...activeComponents, newComp]);
+    setIngredientPortions([...ingredientPortions, 1.0]);
+
+    // Reset inputs
+    setNewIngredientLabel('');
+    setNewIngredientCals('');
+    setNewIngredientProt('');
+    setNewIngredientCarbs('');
+    setNewIngredientFats('');
+    setShowAddCustomIngredient(false);
+  };
+
+  const handleCreateCustomMeal = () => {
+    const customFood = {
+      id: 'custom_' + Date.now(),
+      name: 'Custom Meal',
+      category: 'Custom Entry',
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fats: 0,
+      macroType: 'Custom',
+      image: capturedImageUri || 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&q=80',
+      components: [
+        { label: 'Base Ingredient', x: 25, y: 25, w: 50, h: 50, calories: 150, protein: 10, carbs: 15, fats: 5 }
+      ]
+    };
+    setSelectedFood(customFood);
+    setIsSearching(false);
+  };
+
+  // Sum of ingredients based on individual portion sizes
+  let liveCals = 0;
+  let liveProt = 0;
+  let liveCarbs = 0;
+  let liveFats = 0;
+
+  activeComponents.forEach((comp, idx) => {
+    const multiplier = ingredientPortions[idx] ?? 1.0;
+    liveCals += comp.calories * multiplier;
+    liveProt += comp.protein * multiplier;
+    liveCarbs += comp.carbs * multiplier;
+    liveFats += comp.fats * multiplier;
+  });
+
+  liveCals = Math.round(liveCals);
+  liveProt = Math.round(liveProt);
+  liveCarbs = Math.round(liveCarbs);
+  liveFats = Math.round(liveFats);
+
   const handleConfirmLog = () => {
     if (!selectedFood) return;
 
-    const scaledCals = selectedFood.calories * portionSize;
-    const scaledProt = selectedFood.protein * portionSize;
-    const scaledCarbs = selectedFood.carbs * portionSize;
-    const scaledFats = selectedFood.fats * portionSize;
-
     logMeal(
-      selectedFood.name,
+      isCustomMeal ? customMealName.trim() : selectedFood.name,
       selectedFood.category,
-      scaledCals,
-      scaledProt,
-      scaledCarbs,
-      scaledFats,
-      portionSize,
+      liveCals,
+      liveProt,
+      liveCarbs,
+      liveFats,
+      1.0, // Portion is custom calculated within ingredients
       selectedMealType
     );
 
@@ -345,6 +458,8 @@ export default function ScanScreen() {
     setTimeout(() => {
       setScannerMode('idle');
       setSelectedFood(null);
+      setIsSearching(false);
+      setIsCustomMeal(false);
       // Route back to home summary tab
       router.push('/');
     }, 400);
@@ -355,12 +470,6 @@ export default function ScanScreen() {
     inputRange: [0, 1],
     outputRange: [0, 240] // Camera viewport height bounding limit
   });
-
-  // Calculate live nutrient values according to slider
-  const liveCals = selectedFood ? Math.round(selectedFood.calories * portionSize) : 0;
-  const liveProt = selectedFood ? Math.round(selectedFood.protein * portionSize) : 0;
-  const liveCarbs = selectedFood ? Math.round(selectedFood.carbs * portionSize) : 0;
-  const liveFats = selectedFood ? Math.round(selectedFood.fats * portionSize) : 0;
 
   return (
     <SafeAreaView style={[styles.rootContainer, { backgroundColor: colors.background }]}>
@@ -540,106 +649,268 @@ export default function ScanScreen() {
           {/* Grabber indicator */}
           <View style={[styles.sheetGrabber, { backgroundColor: colors.backgroundSelected }]} />
 
-          {/* Sheet Header */}
-          <View style={styles.sheetHeader}>
-            <View>
-              <Text style={[styles.sheetCategory, { color: '#bf5af2' }]}>{selectedFood.category}</Text>
-              <Text style={[styles.sheetTitle, { color: colors.text }]}>{selectedFood.name}</Text>
-            </View>
-            <Pressable style={styles.sheetCloseBtn} onPress={() => setShowSheet(false)}>
-              <Ionicons name="close" size={22} color={colors.text} />
-            </Pressable>
-          </View>
-
-          {/* Nutrients Sheet Values Grid */}
-          <View style={styles.sheetNutriGrid}>
-            <View style={styles.sheetNutriCol}>
-              <Text style={[styles.sheetNutriValue, { color: '#0a84ff' }]}>{liveCals}</Text>
-              <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Calories</Text>
-            </View>
-
-            <View style={styles.sheetNutriCol}>
-              <Text style={[styles.sheetNutriValue, { color: colors.text }]}>{liveProt}g</Text>
-              <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Protein</Text>
-            </View>
-
-            <View style={styles.sheetNutriCol}>
-              <Text style={[styles.sheetNutriValue, { color: colors.text }]}>{liveCarbs}g</Text>
-              <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Carbs</Text>
-            </View>
-
-            <View style={styles.sheetNutriCol}>
-              <Text style={[styles.sheetNutriValue, { color: colors.text }]}>{liveFats}g</Text>
-              <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Fats</Text>
-            </View>
-          </View>
-
-          {/* Portion adjusting options */}
-          <View style={styles.portionAdjusterBox}>
-            <View style={styles.portionLabelRow}>
-              <Text style={[styles.portionTitle, { color: colors.text }]}>Adjust Portion Size</Text>
-              <Text style={[styles.portionValueTag, { color: '#bf5af2' }]}>
-                {portionSize.toFixed(2)}x ({portionSize === 1 ? 'Standard' : portionSize < 1 ? 'Small' : 'Large'})
-              </Text>
+          <ScrollView
+            style={{ maxHeight: Dimensions.get('window').height * 0.70 }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: Spacing.four }}
+          >
+            {/* Sheet Header */}
+            <View style={styles.sheetHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sheetCategory, { color: '#bf5af2' }]}>
+                  {selectedFood.category}
+                </Text>
+                {isCustomMeal ? (
+                  <TextInput
+                    style={[styles.sheetTitleInput, { color: colors.text, borderBottomColor: '#bf5af2', borderBottomWidth: 1.5 }]}
+                    value={customMealName}
+                    onChangeText={setCustomMealName}
+                    placeholder="Name your meal..."
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                ) : (
+                  <Text style={[styles.sheetTitle, { color: colors.text }]}>{selectedFood.name}</Text>
+                )}
+              </View>
+              <Pressable style={styles.sheetCloseBtn} onPress={() => setShowSheet(false)}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </Pressable>
             </View>
 
-            {/* Styled buttons instead of raw inputs for high fidelity */}
-            <View style={styles.portionQuickButtonsRow}>
-              {([0.25, 0.5, 1.0, 1.5, 2.0, 3.0] as const).map((size) => (
+            {/* Correction UI */}
+            {!isSearching ? (
+              <View style={[styles.correctionRow, { backgroundColor: colors.backgroundSelected + '20' }]}>
+                <Text style={[styles.correctionText, { color: colors.textSecondary }]}>
+                  Incorrect food identification?
+                </Text>
+                <Pressable style={styles.correctionBtn} onPress={() => { setIsSearching(true); setSearchQuery(''); }}>
+                  <Ionicons name="search" size={12} color="#ffffff" />
+                  <Text style={styles.correctionBtnText}>Correct It</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.searchContainer}>
+                <View style={styles.searchActionsRow}>
+                  <TextInput
+                    style={[styles.searchInput, { color: colors.text, backgroundColor: colors.backgroundSelected, borderColor: colors.backgroundSelected, flex: 1 }]}
+                    placeholder="Search database..."
+                    placeholderTextColor={colors.textSecondary}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoFocus
+                  />
+                  <Pressable style={styles.cancelSearchBtn} onPress={() => setIsSearching(false)}>
+                    <Text style={[styles.cancelSearchText, { color: '#ff453a' }]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={styles.customMealBtn} onPress={handleCreateCustomMeal}>
+                    <Ionicons name="create" size={13} color="#ffffff" />
+                    <Text style={styles.customMealBtnText}>Custom</Text>
+                  </Pressable>
+                </View>
+
+                {/* Filtered preset results */}
+                <ScrollView horizontal={false} nestedScrollEnabled style={{ maxHeight: 150 }} showsVerticalScrollIndicator={true}>
+                  <View style={styles.searchResultsGrid}>
+                    {FOOD_PRESETS.filter(food =>
+                      food.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      food.category.toLowerCase().includes(searchQuery.toLowerCase())
+                    ).map(food => (
+                      <Pressable
+                        key={food.id}
+                        style={[styles.searchResultCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.backgroundSelected }]}
+                        onPress={() => {
+                          setSelectedFood(food);
+                          setIsSearching(false);
+                        }}
+                      >
+                        <Image source={{ uri: food.image }} style={styles.searchResultImg} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.searchResultName, { color: colors.text }]}>{food.name}</Text>
+                          <Text style={[styles.searchResultCat, { color: colors.textSecondary }]}>{food.category} • {food.calories} kcal</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Nutrients Sheet Values Grid */}
+            <View style={styles.sheetNutriGrid}>
+              <View style={styles.sheetNutriCol}>
+                <Text style={[styles.sheetNutriValue, { color: '#bf5af2' }]}>{liveCals}</Text>
+                <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Calories</Text>
+              </View>
+
+              <View style={styles.sheetNutriCol}>
+                <Text style={[styles.sheetNutriValue, { color: '#0a84ff' }]}>{liveProt}g</Text>
+                <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Protein</Text>
+              </View>
+
+              <View style={styles.sheetNutriCol}>
+                <Text style={[styles.sheetNutriValue, { color: '#ff9f0a' }]}>{liveCarbs}g</Text>
+                <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Carbs</Text>
+              </View>
+
+              <View style={styles.sheetNutriCol}>
+                <Text style={[styles.sheetNutriValue, { color: '#30d158' }]}>{liveFats}g</Text>
+                <Text style={[styles.sheetNutriLabel, { color: colors.textSecondary }]}>Fats</Text>
+              </View>
+            </View>
+
+            {/* Ingredients Editor List Section */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionHeaderTitle, { color: colors.text }]}>Meal Ingredients</Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>Adjust amounts below</Text>
+            </View>
+
+            <View style={styles.ingredientsList}>
+              {activeComponents.map((comp, idx) => {
+                const port = ingredientPortions[idx] ?? 1.0;
+                const calcCals = Math.round(comp.calories * port);
+                return (
+                  <View key={idx} style={[styles.ingredientRow, { backgroundColor: colors.backgroundSelected }]}>
+                    <Text style={[styles.ingredientLabel, { color: colors.text }]} numberOfLines={2}>
+                      {comp.label}
+                    </Text>
+                    <View style={styles.ingredientControls}>
+                      <Pressable style={styles.controlBtn} onPress={() => handlePortionChange(idx, -0.1)}>
+                        <Text style={[styles.controlBtnText, { color: colors.text }]}>-</Text>
+                      </Pressable>
+                      <Text style={[styles.portionText, { color: colors.text }]}>{port.toFixed(1)}x</Text>
+                      <Pressable style={styles.controlBtn} onPress={() => handlePortionChange(idx, 0.1)}>
+                        <Text style={[styles.controlBtnText, { color: colors.text }]}>+</Text>
+                      </Pressable>
+                      <Text style={[styles.ingredientCals, { color: '#bf5af2' }]}>{calcCals} kcal</Text>
+                      <Pressable style={styles.deleteIngredientBtn} onPress={() => handleDeleteIngredient(idx)}>
+                        <Ionicons name="trash-outline" size={15} color="#ff453a" />
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Add Custom Ingredient Trigger */}
+            {!showAddCustomIngredient ? (
+              <Pressable
+                style={[styles.addCustomBtn, { borderColor: '#bf5af2', backgroundColor: colors.backgroundSelected + '20' }]}
+                onPress={() => setShowAddCustomIngredient(true)}
+              >
+                <Ionicons name="add" size={16} color="#bf5af2" />
+                <Text style={[styles.addCustomBtnText, { color: '#bf5af2' }]}>Add Custom Ingredient</Text>
+              </Pressable>
+            ) : (
+              <View style={[styles.customIngredientForm, { backgroundColor: colors.backgroundSelected, borderColor: colors.backgroundSelected }]}>
+                <Text style={[styles.customFormTitle, { color: colors.text }]}>New Custom Ingredient</Text>
+                
+                <View style={{ gap: Spacing.two }}>
+                  <View style={{ gap: 4 }}>
+                    <Text style={[styles.formInputLabel, { color: colors.textSecondary }]}>Ingredient Name</Text>
+                    <TextInput
+                      style={[styles.customFormInput, { color: colors.text, borderColor: colors.backgroundSelected, backgroundColor: colors.backgroundElement }]}
+                      placeholder="e.g., Cheddar Cheese Slice"
+                      placeholderTextColor={colors.textSecondary}
+                      value={newIngredientLabel}
+                      onChangeText={setNewIngredientLabel}
+                    />
+                  </View>
+
+                  <View style={styles.formInputRow}>
+                    <View style={styles.formInputCol}>
+                      <Text style={[styles.formInputLabel, { color: colors.textSecondary }]}>Calories (kcal)</Text>
+                      <TextInput
+                        style={[styles.customFormInput, { color: colors.text, borderColor: colors.backgroundSelected, backgroundColor: colors.backgroundElement }]}
+                        placeholder="120"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="numeric"
+                        value={newIngredientCals}
+                        onChangeText={setNewIngredientCals}
+                      />
+                    </View>
+                    <View style={styles.formInputCol}>
+                      <Text style={[styles.formInputLabel, { color: colors.textSecondary }]}>Protein (g)</Text>
+                      <TextInput
+                        style={[styles.customFormInput, { color: colors.text, borderColor: colors.backgroundSelected, backgroundColor: colors.backgroundElement }]}
+                        placeholder="8"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="numeric"
+                        value={newIngredientProt}
+                        onChangeText={newIngredientProtText => setNewIngredientProt(newIngredientProtText)}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.formInputRow}>
+                    <View style={styles.formInputCol}>
+                      <Text style={[styles.formInputLabel, { color: colors.textSecondary }]}>Carbs (g)</Text>
+                      <TextInput
+                        style={[styles.customFormInput, { color: colors.text, borderColor: colors.backgroundSelected, backgroundColor: colors.backgroundElement }]}
+                        placeholder="1"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="numeric"
+                        value={newIngredientCarbs}
+                        onChangeText={newIngredientCarbsText => setNewIngredientCarbs(newIngredientCarbsText)}
+                      />
+                    </View>
+                    <View style={styles.formInputCol}>
+                      <Text style={[styles.formInputLabel, { color: colors.textSecondary }]}>Fats (g)</Text>
+                      <TextInput
+                        style={[styles.customFormInput, { color: colors.text, borderColor: colors.backgroundSelected, backgroundColor: colors.backgroundElement }]}
+                        placeholder="10"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="numeric"
+                        value={newIngredientFats}
+                        onChangeText={newIngredientFatsText => setNewIngredientFats(newIngredientFatsText)}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.formActionsRow}>
+                  <Pressable style={styles.formCancelBtn} onPress={() => setShowAddCustomIngredient(false)}>
+                    <Text style={[styles.formCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={styles.formAddBtn} onPress={handleAddIngredient}>
+                    <Text style={styles.formAddText}>Add Item</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Category of meal type */}
+            <Text style={[styles.mealCategoryLabel, { color: colors.text }]}>Select Meal Category</Text>
+            <View style={styles.mealSelectorRow}>
+              {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((type) => (
                 <Pressable
-                  key={size}
+                  key={type}
                   style={[
-                    styles.portionQuickBtn,
+                    styles.mealSelectBtn,
                     { backgroundColor: colors.backgroundSelected },
-                    portionSize === size && { backgroundColor: '#bf5af2' }
+                    selectedMealType === type && { backgroundColor: '#30d158' }
                   ]}
-                  onPress={() => setPortionSize(size)}
+                  onPress={() => setSelectedMealType(type)}
                 >
                   <Text
                     style={[
-                      styles.portionQuickBtnText,
+                      styles.mealSelectBtnText,
                       { color: colors.text },
-                      portionSize === size && { color: '#ffffff', fontWeight: 'bold' }
+                      selectedMealType === type && { color: '#ffffff', fontWeight: 'bold' }
                     ]}
                   >
-                    {size}x
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
                   </Text>
                 </Pressable>
               ))}
             </View>
-          </View>
 
-          {/* Category of meal type */}
-          <Text style={[styles.mealCategoryLabel, { color: colors.text }]}>Select Meal Category</Text>
-          <View style={styles.mealSelectorRow}>
-            {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((type) => (
-              <Pressable
-                key={type}
-                style={[
-                  styles.mealSelectBtn,
-                  { backgroundColor: colors.backgroundSelected },
-                  selectedMealType === type && { backgroundColor: '#30d158' }
-                ]}
-                onPress={() => setSelectedMealType(type)}
-              >
-                <Text
-                  style={[
-                    styles.mealSelectBtnText,
-                    { color: colors.text },
-                    selectedMealType === type && { color: '#ffffff', fontWeight: 'bold' }
-                  ]}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {/* Confirm btn */}
-          <Pressable style={styles.sheetLogConfirmBtn} onPress={handleConfirmLog}>
-            <Ionicons name="checkmark-done" size={20} color="#ffffff" />
-            <Text style={styles.sheetLogConfirmBtnText}>Log Meal to Dashboard</Text>
-          </Pressable>
+            {/* Confirm btn */}
+            <Pressable style={styles.sheetLogConfirmBtn} onPress={handleConfirmLog}>
+              <Ionicons name="checkmark-done" size={20} color="#ffffff" />
+              <Text style={styles.sheetLogConfirmBtnText}>Log Meal to Dashboard</Text>
+            </Pressable>
+          </ScrollView>
         </Animated.View>
       )}
     </SafeAreaView>
@@ -1000,5 +1271,243 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3
+  },
+  correctionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: Spacing.two,
+    padding: Spacing.two,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(10, 132, 255, 0.1)'
+  },
+  correctionText: {
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  correctionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#0a84ff',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8
+  },
+  correctionBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  searchContainer: {
+    marginVertical: Spacing.two,
+    gap: Spacing.two
+  },
+  searchInput: {
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: Spacing.three,
+    fontSize: 14
+  },
+  searchActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center'
+  },
+  cancelSearchBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8
+  },
+  cancelSearchText: {
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  customMealBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#30d158',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8
+  },
+  customMealBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  searchResultsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    maxHeight: 200,
+    paddingVertical: 4
+  },
+  searchResultCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    width: '100%',
+    padding: Spacing.two,
+    borderRadius: 10,
+    borderWidth: 1
+  },
+  searchResultImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 8
+  },
+  searchResultName: {
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  searchResultCat: {
+    fontSize: 10,
+    marginTop: 2
+  },
+  sheetTitleInput: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 2,
+    paddingVertical: 2,
+    width: '80%'
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.two,
+    marginBottom: Spacing.two
+  },
+  sectionHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.2
+  },
+  ingredientsList: {
+    gap: Spacing.two,
+    marginBottom: Spacing.three
+  },
+  ingredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 12
+  },
+  ingredientLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: Spacing.two
+  },
+  ingredientControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  controlBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  controlBtnText: {
+    fontSize: 14,
+    fontWeight: '800'
+  },
+  portionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    minWidth: 32,
+    textAlign: 'center'
+  },
+  ingredientCals: {
+    fontSize: 13,
+    fontWeight: '700',
+    minWidth: 60,
+    textAlign: 'right'
+  },
+  deleteIngredientBtn: {
+    padding: 4,
+    marginLeft: 4
+  },
+  addCustomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    marginBottom: Spacing.three
+  },
+  addCustomBtnText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  customIngredientForm: {
+    padding: Spacing.three,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: Spacing.two,
+    marginBottom: Spacing.three
+  },
+  customFormTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2
+  },
+  formInputRow: {
+    flexDirection: 'row',
+    gap: Spacing.two
+  },
+  formInputCol: {
+    flex: 1,
+    gap: 4
+  },
+  formInputLabel: {
+    fontSize: 10,
+    fontWeight: '600'
+  },
+  customFormInput: {
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: Spacing.two,
+    fontSize: 12
+  },
+  formActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: Spacing.one
+  },
+  formCancelBtn: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    borderRadius: 8
+  },
+  formCancelText: {
+    fontSize: 11,
+    fontWeight: '600'
+  },
+  formAddBtn: {
+    backgroundColor: '#bf5af2',
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 8
+  },
+  formAddText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700'
   }
 });

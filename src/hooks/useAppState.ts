@@ -138,10 +138,10 @@ export function useAppState() {
   };
 
   const deleteMeal = async (logId: string) => {
-    const updatedLogs = state.logs.filter(item => item.id !== logId);
+    const updatedLogs = state.logs.filter((item: any) => item.id !== logId);
     
     // Recalculate today's total
-    const todayTotal = updatedLogs.reduce((sum, item) => sum + item.calories, 0);
+    const todayTotal = updatedLogs.reduce((sum: number, item: any) => sum + item.calories, 0);
     const updatedWeekly = [...state.weeklyHistory];
     updatedWeekly[updatedWeekly.length - 1] = todayTotal;
 
