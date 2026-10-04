@@ -31,6 +31,8 @@ export interface AppState {
   waterLogged: number;
   activeBurn: number;
   weeklyHistory: number[];
+  streak: number;
+  lastLoggedDate: string | null;
 }
 
 const HISTORIC_BASE = [1780, 2150, 1420, 1980, 1650, 1820];
@@ -49,7 +51,9 @@ const DEFAULT_STATE: AppState = {
   logs: [],
   waterLogged: 0,
   activeBurn: 0,
-  weeklyHistory: [...HISTORIC_BASE]
+  weeklyHistory: [...HISTORIC_BASE],
+  streak: 0,
+  lastLoggedDate: null
 };
 
 export function useAppState() {
@@ -122,7 +126,24 @@ export function useAppState() {
     };
 
     const updatedLogs = [...state.logs, newLog];
-    
+
+    // Streak Logic
+    const today = new Date().toDateString();
+    let updatedStreak = state.streak;
+
+    if (state.lastLoggedDate !== today) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      if (state.lastLoggedDate === yesterday.toDateString()) {
+        updatedStreak += 1;
+      } else if (state.lastLoggedDate === null) {
+        updatedStreak = 1;
+      } else {
+        updatedStreak = 1; // Reset streak if a day was missed
+      }
+    }
+
     // Sync today's total calories in weekly trends chart index 6 (today)
     const todayTotal = updatedLogs.reduce((sum, item) => sum + item.calories, 0);
     const updatedWeekly = [...state.weeklyHistory];
@@ -131,7 +152,9 @@ export function useAppState() {
     const updatedState = {
       ...state,
       logs: updatedLogs,
-      weeklyHistory: updatedWeekly
+      weeklyHistory: updatedWeekly,
+      streak: updatedStreak,
+      lastLoggedDate: today
     };
 
     await saveState(updatedState);

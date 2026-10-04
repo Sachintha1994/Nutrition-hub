@@ -18,8 +18,11 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
+import AnimatedView from 'react-native-reanimated';
+import { FadeIn, FadeInUp, ZoomIn } from 'react-native-reanimated';
 
-import { useAppState } from '@/hooks/useAppState';
+import { NutritionService, NutritionItem } from '@/services/nutritionApi';
 import { Colors, Spacing, BottomTabInset, MaxContentWidth } from '@/constants/theme';
 import { useColorScheme } from 'react-native';
 
@@ -152,11 +155,66 @@ export default function ScanScreen() {
   const [ingredientPortions, setIngredientPortions] = useState<number[]>([]);
   const [activeComponents, setActiveComponents] = useState<typeof FOOD_PRESETS[0]['components']>([]);
 
-  // Correction & Custom meal builder states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [isCustomMeal, setIsCustomMeal] = useState(false);
-  const [customMealName, setCustomMealName] = useState('Custom Meal');
+  // New real-world search logic
+  const handleSearchDatabase = async () => {
+    if (!searchQuery.trim()) return;
+
+    try {
+      const results = await NutritionService.searchFood(searchQuery);
+      if (results && results.length > 0) {
+        const topMatch = results[0];
+        setSelectedFood({
+          id: topMatch.id,
+          name: topMatch.name,
+          category: topMatch.category || 'General',
+          calories: topMatch.calories,
+          protein: topMatch.protein,
+          carbs: topMatch.carbs,
+          fats: topMatch.fats,
+          macroType: 'API Result',
+          image: topMatch.image || 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&q=80',
+          components: [
+            { label: topMatch.name, x: 20, y: 20, w: 60, h: 60, calories: topMatch.calories, protein: topMatch.protein, carbs: topMatch.carbs, fats: topMatch.fats }
+          ]
+        });
+        setIsSearching(false);
+      } else {
+        alert('No matching foods found in the database. Try being more specific!');
+      }
+    } catch (err) {
+      alert('Error connecting to nutrition database. Please check your API keys!');
+    }
+  };
+
+  // Update the search results rendering to be more dynamic
+  const renderSearchResults = () => {
+    return (
+      <ScrollView horizontal={false} nestedScrollEnabled style={{ maxHeight: 150 }} showsVerticalScrollIndicator={true}>
+        <View style={styles.searchResultsGrid}>
+          {/* We keep the presets as "Suggested" but the API now handles the primary search */}
+          {FOOD_PRESETS.filter(food =>
+            food.name.toLowerCase().includes(searchQuery.toLowerCase())
+          ).map(food => (
+            <Pressable
+              key={food.id}
+              style={[styles.searchResultCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.backgroundSelected }]}
+              onPress={() => {
+                setSelectedFood(food);
+                setIsSearching(false);
+              }}
+            >
+              <Image source={{ uri: food.image }} style={styles.searchResultImg} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.searchResultName, { color: colors.text }]}>{food.name}</Text>
+                <Text style={[styles.searchResultCat, { color: colors.textSecondary }]}>Preset • {food.calories} kcal</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+            </Pressable>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  };
 
   // Custom ingredient inputs
   const [showAddCustomIngredient, setShowAddCustomIngredient] = useState(false);
@@ -325,8 +383,10 @@ export default function ScanScreen() {
 
   const triggerScan = (food: typeof FOOD_PRESETS[0]) => {
     if (scannerMode === 'scanning') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setScannerMode('scanning');
     setSelectedFood(food);
+
     setAnalysisStepIndex(0);
     setShowSheet(false);
 
@@ -344,6 +404,7 @@ export default function ScanScreen() {
         setAnalysisStepIndex(currentStep);
       } else {
         clearInterval(interval);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setScannerMode('analyzed');
         // Delay sliding bottom sheet to let bounding boxes shine!
         setTimeout(() => {
@@ -352,6 +413,7 @@ export default function ScanScreen() {
         }, 1200);
       }
     }, 600);
+
   };
 
   const handlePortionChange = (idx: number, delta: number) => {
