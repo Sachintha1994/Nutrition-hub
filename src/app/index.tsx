@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 
 import { useAppState } from '@/hooks/useAppState';
 import { Colors, Spacing, BottomTabInset, MaxContentWidth } from '@/constants/theme';
@@ -184,7 +186,9 @@ export default function HomeScreen() {
 
   // Profile update submit
   const handleUpdateProfile = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const parsedCals = parseInt(profileGoalCalories) || 2000;
+
     const parsedWeight = parseFloat(profileWeight) || 74;
     const parsedTarget = parseFloat(profileTargetWeight) || 72;
     const parsedProt = parseInt(profileProtein) || 130;
@@ -209,7 +213,9 @@ export default function HomeScreen() {
 
   // Perform debounced live auto-saving to prevent lag and dropped characters on the native UI thread
   const performLiveUpdate = (field: string, value: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setActiveEditingField(field);
+
     setShowSaveSuccess(null);
 
     if (liveSaveTimeout.current) {
@@ -262,7 +268,9 @@ export default function HomeScreen() {
 
   // Diet category auto calculator helper
   const handleDietChange = (diet: 'balanced' | 'highprotein' | 'keto' | 'vegan') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setProfileDietType(diet);
+
     const targetCals = parseInt(profileGoalCalories) || 2000;
     let pRatio = 0.25;
     let cRatio = 0.50;
@@ -348,7 +356,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.rootContainer, { backgroundColor: colors.background }]}>
       {/* Top Header */}
-      <View style={styles.topHeader}>
+      <Animated.View entering={FadeInDown.duration(600)} style={styles.topHeader}>
         <View>
           <Text style={[styles.headerDate, { color: colors.textSecondary }]}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
@@ -356,7 +364,7 @@ export default function HomeScreen() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>NutriScan Hub</Text>
         </View>
         <Ionicons name="fitness-outline" size={28} color="#0a84ff" />
-      </View>
+      </Animated.View>
 
       {/* Segmented Top Navigator */}
       <View style={[styles.segmentedControl, { backgroundColor: colors.backgroundElement }]}>
@@ -416,7 +424,7 @@ export default function HomeScreen() {
           <View style={styles.paneContainer}>
             {/* Calorie Ring Progress Card */}
             <View style={[styles.card, styles.calCard, { backgroundColor: colors.backgroundElement }]}>
-              <View style={styles.calRingContainer}>
+              <Animated.View entering={ZoomIn.duration(800)} style={styles.calRingContainer}>
                 {/* SVG Calorie Circle Progress */}
                 <View style={styles.ringVisual}>
                   <Svg width={128} height={128} viewBox="0 0 120 120">
@@ -467,8 +475,8 @@ export default function HomeScreen() {
                         <Text style={[styles.calLabel, { color: colors.textSecondary }]}>Goal</Text>
                         <Text style={[styles.calValue, { color: colors.text }]}>{goalCalories} kcal</Text>
                       </View>
-                      <Pressable 
-                        style={{ padding: 4, borderRadius: 8, backgroundColor: colors.backgroundSelected }} 
+                      <Pressable
+                        style={{ padding: 4, borderRadius: 8, backgroundColor: colors.backgroundSelected }}
                         onPress={() => setIsEditingInlineGoals(!isEditingInlineGoals)}
                       >
                         <Ionicons name="create-outline" size={14} color="#0a84ff" />
@@ -492,9 +500,8 @@ export default function HomeScreen() {
                     </View>
                   </View>
                 </View>
-              </View>
+              </Animated.View>
             </View>
-
             {/* Inline Goal Editing Form */}
             {isEditingInlineGoals && (
               <View style={[styles.card, { backgroundColor: colors.backgroundElement, marginTop: 12, padding: 16 }]}>
